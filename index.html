@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Claude Панель</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<style>
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --bg2: var(--tg-theme-secondary-bg-color, #f2f2f5);
+  --text: var(--tg-theme-text-color, #1b1b1f);
+  --hint: var(--tg-theme-hint-color, #8a8a93);
+  --link: var(--tg-theme-link-color, #2a7bd8);
+  --btn: var(--tg-theme-button-color, #d97757);
+  --btn-text: var(--tg-theme-button-text-color, #ffffff);
+  --danger: var(--tg-theme-destructive-text-color, #d93a3a);
+  --line: color-mix(in srgb, var(--hint) 25%, transparent);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tg]) { --bg:#17171a; --bg2:#222227; --text:#ececf1; --hint:#8d8d97; --link:#6aa8ff; }
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: var(--bg2); color: var(--text);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+input, textarea, select { font: inherit; color: var(--text); }
+#app { height: 100%; display: flex; flex-direction: column; }
+.screen { flex: 1; overflow-y: auto; padding: 12px 16px 24px; }
+.hidden { display: none !important; }
+h1 { font-size: 22px; margin: 6px 0 14px; }
+h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--hint); margin: 18px 4px 8px; }
+.card { background: var(--bg); border-radius: var(--radius); overflow: hidden; }
+.row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; width: 100%; text-align: left; border-bottom: 1px solid var(--line); min-height: 52px; }
+.row:last-child { border-bottom: 0; }
+.row .ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--bg2); flex: none; font-size: 17px; }
+.row .main { flex: 1; min-width: 0; }
+.row .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.row .sub { font-size: 13px; color: var(--hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .more { color: var(--hint); padding: 6px; font-size: 18px; }
+.btn { background: var(--btn); color: var(--btn-text); border-radius: 12px; padding: 11px 16px; font-weight: 600; }
+.btn.ghost { background: var(--bg); color: var(--link); }
+.btn.block { width: 100%; }
+.empty { color: var(--hint); text-align: center; padding: 28px 12px; }
+.tabs { display: flex; background: var(--bg); border-radius: 12px; padding: 3px; margin-bottom: 12px; }
+.tabs button { flex: 1; padding: 8px; border-radius: 10px; color: var(--hint); font-weight: 600; }
+.tabs button.on { background: var(--bg2); color: var(--text); }
+.crumbs { font-size: 13px; color: var(--hint); margin: 0 4px 8px; overflow-x: auto; white-space: nowrap; }
+.crumbs a { color: var(--link); text-decoration: none; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.toolbar .btn { flex: 1; }
+
+/* chat */
+#chat { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--bg2); }
+#msgs { flex: 1; overflow-y: auto; padding: 12px 12px 4px; }
+.msg { margin: 0 0 12px; display: flex; }
+.msg.user { justify-content: flex-end; }
+.bubble { max-width: 88%; padding: 9px 13px; border-radius: 16px; background: var(--bg); overflow-wrap: anywhere; }
+.msg.user .bubble { background: var(--btn); color: var(--btn-text); border-bottom-right-radius: 5px; white-space: pre-wrap; }
+.msg.assistant .bubble { border-bottom-left-radius: 5px; max-width: 100%; width: 100%; }
+.bubble p { margin: 0 0 8px; } .bubble p:last-child { margin-bottom: 0; }
+.bubble pre { background: var(--bg2); padding: 10px; border-radius: 10px; overflow-x: auto; font-size: 13px; }
+.bubble code { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+.bubble :not(pre) > code { background: var(--bg2); padding: 1px 5px; border-radius: 5px; }
+.bubble table { border-collapse: collapse; display: block; overflow-x: auto; font-size: 13px; }
+.bubble td, .bubble th { border: 1px solid var(--line); padding: 4px 8px; }
+.bubble a { color: var(--link); }
+.bubble ul, .bubble ol { padding-left: 20px; margin: 4px 0 8px; }
+.tool { font-size: 13px; color: var(--hint); margin: 6px 0; display: flex; gap: 6px; }
+.tool b { font-weight: 600; flex: none; }
+.tool span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.err { color: var(--danger); font-size: 13px; margin-top: 6px; }
+.files-chip { font-size: 12px; opacity: .85; margin-top: 4px; }
+.typing::after { content: "▍"; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+#composer { background: var(--bg); border-top: 1px solid var(--line); padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); }
+#opts { display: flex; gap: 6px; margin-bottom: 6px; overflow-x: auto; }
+.chip { background: var(--bg2); border-radius: 999px; padding: 5px 11px; font-size: 13px; white-space: nowrap; }
+.chip.on { background: var(--btn); color: var(--btn-text); }
+#attached { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+#attached .chip button { margin-left: 4px; color: inherit; }
+.inrow { display: flex; align-items: flex-end; gap: 6px; }
+#input { flex: 1; resize: none; border: 0; outline: 0; background: var(--bg2); border-radius: 18px; padding: 9px 14px; max-height: 160px; min-height: 40px; }
+.round { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 18px; }
+#send { background: var(--btn); color: var(--btn-text); }
+#send.stop { background: var(--danger); color: #fff; }
+
+/* sheets */
+.sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: flex-end; z-index: 10; }
+.sheet { background: var(--bg2); width: 100%; border-radius: 18px 18px 0 0; padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); max-height: 85vh; overflow-y: auto; }
+.sheet h3 { margin: 4px 4px 12px; font-size: 17px; }
+.sheet input { width: 100%; padding: 12px 14px; border-radius: 12px; border: 0; background: var(--bg); outline: 0; margin-bottom: 10px; }
+.viewer pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; background: var(--bg); padding: 12px; border-radius: 12px; }
+.viewer img { max-width: 100%; border-radius: 12px; }
+#toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: rgba(20,20,22,.9); color: #fff; padding: 9px 16px; border-radius: 12px; font-size: 14px; z-index: 20; max-width: 90%; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- projects -->
+  <div id="s-home" class="screen">
+    <h1>Claude</h1>
+    <div class="toolbar"><button class="btn" id="new-project">+ Новый проект</button></div>
+    <h2>Проекты</h2>
+    <div class="card" id="projects"></div>
+  </div>
+  <!-- project -->
+  <div id="s-project" class="screen hidden">
+    <h1 id="p-title"></h1>
+    <div class="tabs"><button data-tab="chats" class="on">Чаты</button><button data-tab="files">Файлы</button></div>
+    <div id="t-chats">
+      <div class="toolbar"><button class="btn" id="new-chat">+ Новый чат</button></div>
+      <div class="card" id="chats"></div>
+    </div>
+    <div id="t-files" class="hidden">
+      <div class="toolbar"><button class="btn" id="upload-btn">⬆ Загрузить файлы</button></div>
+      <div class="crumbs" id="crumbs"></div>
+      <div class="card" id="files"></div>
+    </div>
+  </div>
+  <!-- chat -->
+  <div id="chat" class="hidden">
+    <div id="msgs"></div>
+    <div id="composer">
+      <div id="opts"></div>
+      <div id="attached"></div>
+      <div class="inrow">
+        <button class="round" id="attach" title="Прикрепить файл">📎</button>
+        <textarea id="input" rows="1" placeholder="Сообщение…"></textarea>
+        <button class="round" id="send" title="Отправить">➤</button>
+      </div>
+    </div>
+  </div>
+</div>
+<input type="file" id="file-input" multiple class="hidden">
+<div id="toast" class="hidden"></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg?.initData) { document.documentElement.dataset.tg = "1"; tg.ready(); tg.expand(); }
+const params = new URLSearchParams(location.search);
+const API = (params.get("api") || (location.protocol === "https:" && !location.hostname.endsWith("github.io") ? location.origin : "")).replace(/\/+$/, "");
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const md = (s) => DOMPurify.sanitize(marked.parse(s || "", { breaks: true }));
+function toast(t) { const el = $("#toast"); el.textContent = t; el.classList.remove("hidden"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add("hidden"), 2600); }
+const when = (ts) => { const d = new Date(ts), n = new Date(); return d.toDateString() === n.toDateString() ? d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("ru", { day: "numeric", month: "short" }); };
+const size = (b) => b < 1024 ? b + " Б" : b < 1048576 ? (b / 1024).toFixed(0) + " КБ" : (b / 1048576).toFixed(1) + " МБ";
+
+async function call(path, opts = {}) {
+  const r = await fetch(API + path, { ...opts, headers: { "X-Init-Data": tg?.initData || "", ...(opts.json ? { "Content-Type": "application/json" } : {}), ...(opts.headers || {}) }, body: opts.json ? JSON.stringify(opts.json) : opts.body });
+  if (!r.ok) { let e = "Ошибка " + r.status; try { e = (await r.json()).error || e; } catch {} throw new Error(e); }
+  return r;
+}
+const get = async (p) => (await call(p)).json();
+
+// ---------- state & navigation ----------
+const st = { me: null, project: null, tab: "chats", path: "", chat: null, attached: [], reader: null };
+const screens = ["#s-home", "#s-project", "#chat"];
+function show(id) {
+  screens.forEach((s) => $(s).classList.toggle("hidden", s !== id));
+  if (tg?.BackButton) id === "#s-home" ? tg.BackButton.hide() : tg.BackButton.show();
+}
+function back() {
+  if (!$("#chat").classList.contains("hidden")) { closeChat(); openProject(st.project); }
+  else if (!$("#s-project").classList.contains("hidden")) {
+    if (st.tab === "files" && st.path) { st.path = st.path.split("/").slice(0, -1).join("/"); loadFiles(); }
+    else openHome();
+  }
+}
+tg?.BackButton?.onClick(back);
+
+function sheet(html, onMount) {
+  const bg = document.createElement("div");
+  bg.className = "sheet-bg";
+  bg.innerHTML = `<div class="sheet">${html}</div>`;
+  bg.addEventListener("click", (e) => { if (e.target === bg) bg.remove(); });
+  document.body.appendChild(bg);
+  onMount?.(bg.firstChild, () => bg.remove());
+}
+function ask(title, placeholder, value = "") {
+  return new Promise((res) => sheet(`<h3>${esc(title)}</h3><input placeholder="${esc(placeholder)}" value="${esc(value)}"><button class="btn block">Готово</button>`, (el, close) => {
+    const inp = el.querySelector("input"); setTimeout(() => inp.focus(), 50);
+    const done = () => { close(); res(inp.value.trim()); };
+    el.querySelector("button").onclick = done;
+    inp.onkeydown = (e) => e.key === "Enter" && done();
+  }));
+}
+function menu(title, items) {
+  sheet(`<h3>${esc(title)}</h3><div class="card">${items.map((it, i) => `<button class="row" data-i="${i}" ${it.danger ? 'style="color:var(--danger)"' : ""}><div class="main">${esc(it.label)}</div></button>`).join("")}</div>`, (el, close) => {
+    el.querySelectorAll("[data-i]").forEach((b) => b.onclick = () => { close(); items[b.dataset.i].run(); });
+  });
+}
+function confirmBox(text) {
+  return new Promise((res) => tg?.showConfirm ? tg.showConfirm(text, res) : res(confirm(text)));
+}
+
+// ---------- home ----------
+async function openHome() {
+  st.project = null; show("#s-home");
+  const list = await get("/api/projects");
+  $("#projects").innerHTML = list.length ? list.map((p) => `<button class="row" data-p="${esc(p.name)}"><div class="ico">📁</div><div class="main"><div class="title">${esc(p.name)}</div><div class="sub">${p.chats ? p.chats + " чат(ов) · " : ""}${when(p.updatedAt)}</div></div><div class="more">›</div></button>`).join("") : `<div class="empty">Пока нет проектов</div>`;
+  $("#projects").querySelectorAll("[data-p]").forEach((b) => b.onclick = () => openProject(b.dataset.p));
+}
+$("#new-project").onclick = async () => {
+  const name = await ask("Новый проект", "Название, например «Реклама»");
+  if (!name) return;
+  try { await call("/api/projects", { method: "POST", json: { name } }); openProject(name); } catch (e) { toast(e.message); }
+};
+
+// ---------- project ----------
+async function openProject(name) {
+  st.project = name; $("#p-title").textContent = name; show("#s-project");
+  setTab(st.tab);
+}
+function setTab(tab) {
+  st.tab = tab;
+  document.querySelectorAll(".tabs button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  $("#t-chats").classList.toggle("hidden", tab !== "chats");
+  $("#t-files").classList.toggle("hidden", tab !== "files");
+  tab === "chats" ? loadChats() : loadFiles();
+}
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => setTab(b.dataset.tab));
+
+async function loadChats() {
+  const list = await get("/api/chats?project=" + encodeURIComponent(st.project));
+  const modelName = (id) => st.me.models.find((m) => m.id === id)?.name || id;
+  $("#chats").innerHTML = list.length ? list.map((c) => `<div class="row" data-c="${c.id}"><div class="ico">${c.running ? "⏳" : c.mode === "cowork" ? "🛠" : "💬"}</div><div class="main"><div class="title">${esc(c.title)}</div><div class="sub">${esc(modelName(c.model))} · ${c.mode === "cowork" ? "Cowork" : "Чат"} · ${when(c.updatedAt)}</div></div><button class="more" data-m="${c.id}">⋯</button></div>`).join("") : `<div class="empty">Чатов пока нет. Нажмите «Новый чат».</div>`;
+  $("#chats").querySelectorAll("[data-c]").forEach((r) => r.onclick = (e) => { if (!e.target.dataset.m) openChat(r.dataset.c); });
+  $("#chats").querySelectorAll("[data-m]").forEach((b) => b.onclick = () => {
+    const c = list.find((x) => x.id === b.dataset.m);
+    menu(c.title, [
+      { label: "Переименовать", run: async () => { const t = await ask("Название чата", "", c.title); if (t) { await call("/api/chats/" + c.id, { method: "PATCH", json: { title: t } }); loadChats(); } } },
+      { label: "Удалить", danger: true, run: async () => { if (await confirmBox("Удалить чат «" + c.title + "»?")) { await call("/api/chats/" + c.id, { method: "DELETE" }); loadChats(); } } },
+    ]);
+  });
+}
+$("#new-chat").onclick = async () => {
+  const last = JSON.parse(localStorageGet("prefs") || "{}");
+  const c = await (await call("/api/chats", { method: "POST", json: { project: st.project, model: last.model || "opus", mode: last.mode || "cowork" } })).json();
+  openChat(c.id);
+};
+
+async function loadFiles() {
+  const p = st.path;
+  const parts = p ? p.split("/") : [];
+  $("#crumbs").innerHTML = `<a href="#" data-d="">${esc(st.project)}</a>` + parts.map((x, i) => ` / <a href="#" data-d="${esc(parts.slice(0, i + 1).join("/"))}">${esc(x)}</a>`).join("");
+  $("#crumbs").querySelectorAll("a").forEach((a) => a.onclick = (e) => { e.preventDefault(); st.path = a.dataset.d; loadFiles(); });
+  let list;
+  try { list = await get(`/api/files?project=${encodeURIComponent(st.project)}&path=${encodeURIComponent(p)}`); }
+  catch (e) { st.path = ""; return toast(e.message); }
+  $("#files").innerHTML = list.length ? list.map((f, i) => `<div class="row" data-i="${i}"><div class="ico">${f.dir ? "📁" : icon(f.name)}</div><div class="main"><div class="title">${esc(f.name)}</div><div class="sub">${f.dir ? "папка" : size(f.size)} · ${when(f.mtime)}</div></div><button class="more" data-m="${i}">⋯</button></div>`).join("") : `<div class="empty">Папка пуста. Загрузите файлы или попросите Claude их создать.</div>`;
+  const full = (f) => (p ? p + "/" : "") + f.name;
+  $("#files").querySelectorAll("[data-i]").forEach((r) => r.onclick = (e) => {
+    if (e.target.dataset.m) return;
+    const f = list[r.dataset.i];
+    if (f.dir) { st.path = full(f); loadFiles(); } else viewFile(full(f), f);
+  });
+  $("#files").querySelectorAll("[data-m]").forEach((b) => b.onclick = () => {
+    const f = list[b.dataset.m];
+    menu(f.name, [
+      ...(f.dir ? [] : [{ label: "Скачать", run: () => download(full(f)) }]),
+      { label: "Обсудить в новом чате", run: async () => { const c = await (await call("/api/chats", { method: "POST", json: { project: st.project, model: "opus", mode: "cowork" } })).json(); st.attached = [full(f)]; openChat(c.id); } },
+      { label: "Удалить", danger: true, run: async () => { if (await confirmBox("Удалить «" + f.name + "»?")) { await call(`/api/file?project=${encodeURIComponent(st.project)}&path=${encodeURIComponent(full(f))}`, { method: "DELETE" }); loadFiles(); } } },
+    ]);
+  });
+}
+function icon(n) { const e = n.split(".").pop().toLowerCase(); return /^(png|jpe?g|gif|webp|heic|svg)$/.test(e) ? "🖼" : /^(pdf)$/.test(e) ? "📕" : /^(docx?|txt|md|rtf)$/.test(e) ? "📄" : /^(xlsx?|csv)$/.test(e) ? "📊" : /^(js|ts|py|html|css|json|sh)$/.test(e) ? "🧩" : "📎"; }
+async function viewFile(path, f) {
+  const ext = f.name.split(".").pop().toLowerCase();
+  const isImg = /^(png|jpe?g|gif|webp|svg)$/.test(ext);
+  const isText = f.size < 1048576 && /^(txt|md|json|csv|js|ts|py|html|css|sh|yml|yaml|xml|log|ini|conf|env|toml)$/.test(ext);
+  if (!isImg && !isText) return download(path);
+  try {
+    const r = await call(`/api/file?project=${encodeURIComponent(st.project)}&path=${encodeURIComponent(path)}`);
+    let body;
+    if (isImg) body = `<img src="${URL.createObjectURL(await r.blob())}">`;
+    else body = ext === "md" ? `<div class="bubble">${md(await r.text())}</div>` : `<pre>${esc(await r.text())}</pre>`;
+    sheet(`<h3>${esc(f.name)}</h3><div class="viewer">${body}</div><div class="toolbar" style="margin-top:12px"><button class="btn ghost" id="v-dl">Скачать</button></div>`, (el, close) => { el.querySelector("#v-dl").onclick = () => { close(); download(path); }; });
+  } catch (e) { toast(e.message); }
+}
+async function download(path) {
+  try {
+    const { url } = await get(`/api/dl-link?project=${encodeURIComponent(st.project)}&path=${encodeURIComponent(path)}`);
+    const name = path.split("/").pop();
+    if (tg?.downloadFile && tg.isVersionAtLeast?.("8.0")) tg.downloadFile({ url, file_name: name });
+    else if (tg?.openLink) tg.openLink(url); else location.href = url;
+  } catch (e) { toast(e.message); }
+}
+
+let uploadTarget = "files";
+$("#upload-btn").onclick = () => { uploadTarget = "files"; $("#file-input").click(); };
+$("#attach").onclick = () => { uploadTarget = "chat"; $("#file-input").click(); };
+$("#file-input").onchange = async (e) => {
+  const files = [...e.target.files]; e.target.value = "";
+  if (!files.length) return;
+  const fd = new FormData(); files.forEach((f) => fd.append("file", f));
+  const dir = uploadTarget === "files" ? st.path || "uploads" : "uploads";
+  toast("Загружаю…");
+  try {
+    const { saved } = await (await call(`/api/upload?project=${encodeURIComponent(st.project)}&path=${encodeURIComponent(dir)}`, { method: "POST", body: fd })).json();
+    toast("Загружено: " + saved.length);
+    if (uploadTarget === "files") { st.path = dir; loadFiles(); } else { st.attached.push(...saved); renderAttached(); }
+  } catch (err) { toast(err.message); }
+};
+
+// ---------- chat ----------
+function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+async function openChat(id) {
+  show("#chat");
+  st.chat = await get("/api/chats/" + id);
+  renderMsgs(); renderOpts(); renderAttached();
+  if (st.chat.running) attachStream(call("/api/chats/" + id + "/stream"));
+}
+function closeChat() { st.reader?.cancel().catch(() => {}); st.reader = null; st.chat = null; st.attached = []; }
+
+function renderParts(m) {
+  let h = "";
+  for (const p of m.parts) {
+    if (p.t === "text") h += md(p.v);
+    else h += `<div class="tool"><b>🔧 ${esc(toolName(p.name))}</b><span>${esc(p.desc || "")}</span></div>`;
+  }
+  return h;
+}
+function toolName(n) { return ({ Bash: "Команда", Read: "Читаю", Write: "Создаю файл", Edit: "Правлю", Glob: "Ищу файлы", Grep: "Ищу в файлах", WebSearch: "Поиск", WebFetch: "Открываю сайт", Task: "Помощник", Agent: "Помощник", TodoWrite: "План" })[n] || n; }
+function renderMsgs() {
+  const c = st.chat;
+  if (!c.messages.length) {
+    $("#msgs").innerHTML = `<div class="empty"><b>${esc(c.project)}</b><br>Напишите задачу. В режиме Cowork я сам работаю с файлами проекта и выполняю команды на сервере. В режиме «Чат» я только отвечаю и читаю файлы.</div>`;
+    return;
+  }
+  $("#msgs").innerHTML = c.messages.map((m, i) => {
+    const last = i === c.messages.length - 1 && m.role === "assistant" && c.running;
+    if (m.role === "user") return `<div class="msg user"><div class="bubble">${esc(m.parts.map((p) => p.v).join(""))}${m.files?.length ? `<div class="files-chip">📎 ${m.files.map(esc).join(", ")}</div>` : ""}</div></div>`;
+    return `<div class="msg assistant"><div class="bubble ${last ? "typing" : ""}">${renderParts(m)}${m.error ? `<div class="err">${esc(m.error)}</div>` : ""}</div></div>`;
+  }).join("");
+  scrollDown();
+}
+function scrollDown() { const el = $("#msgs"); if (el.scrollHeight - el.scrollTop - el.clientHeight < 400 || st.forceScroll) el.scrollTop = el.scrollHeight; st.forceScroll = false; }
+function renderOpts() {
+  const c = st.chat;
+  $("#opts").innerHTML = st.me.models.map((m) => `<button class="chip ${c.model === m.id ? "on" : ""}" data-model="${m.id}">${esc(m.name)}</button>`).join("") +
+    `<span style="width:8px;flex:none"></span>` +
+    st.me.modes.map((m) => `<button class="chip ${c.mode === m.id ? "on" : ""}" data-mode="${m.id}">${m.id === "cowork" ? "🛠 " : "💬 "}${esc(m.name)}</button>`).join("");
+  $("#opts").querySelectorAll("[data-model]").forEach((b) => b.onclick = () => { c.model = b.dataset.model; savePrefs(); renderOpts(); toast(st.me.models.find((m) => m.id === c.model).desc); });
+  $("#opts").querySelectorAll("[data-mode]").forEach((b) => b.onclick = () => { c.mode = b.dataset.mode; savePrefs(); renderOpts(); toast(c.mode === "cowork" ? "Cowork: работаю с файлами и командами сервера" : "Чат: только отвечаю и читаю файлы"); });
+  $("#send").classList.toggle("stop", !!c.running);
+  $("#send").textContent = c.running ? "■" : "➤";
+}
+function savePrefs() { localStorageSet("prefs", JSON.stringify({ model: st.chat.model, mode: st.chat.mode })); call("/api/chats/" + st.chat.id, { method: "PATCH", json: { model: st.chat.model, mode: st.chat.mode } }).catch(() => {}); }
+function renderAttached() {
+  $("#attached").innerHTML = st.attached.map((f, i) => `<span class="chip">📎 ${esc(f.split("/").pop())}<button data-x="${i}">✕</button></span>`).join("");
+  $("#attached").querySelectorAll("[data-x]").forEach((b) => b.onclick = () => { st.attached.splice(b.dataset.x, 1); renderAttached(); });
+}
+
+$("#input").addEventListener("input", (e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; });
+$("#send").onclick = async () => {
+  const c = st.chat;
+  if (c.running) { await call("/api/chats/" + c.id + "/stop", { method: "POST" }).catch(() => {}); return; }
+  const text = $("#input").value.trim();
+  if (!text && !st.attached.length) return;
+  const files = st.attached; st.attached = []; renderAttached();
+  $("#input").value = ""; $("#input").style.height = "auto";
+  c.messages.push({ role: "user", parts: [{ t: "text", v: text }], files, ts: Date.now() });
+  c.messages.push({ role: "assistant", parts: [], ts: Date.now() });
+  c.running = true; st.forceScroll = true; renderMsgs(); renderOpts();
+  attachStream(call("/api/chats/" + c.id + "/send", { method: "POST", json: { text, files, model: c.model, mode: c.mode } }));
+};
+
+async function attachStream(respPromise) {
+  const c = st.chat;
+  try {
+    const r = await respPromise;
+    const reader = r.body.getReader(); st.reader = reader;
+    const dec = new TextDecoder(); let buf = "";
+    const msg = () => c.messages[c.messages.length - 1];
+    let pending = false;
+    const redraw = () => { if (pending) return; pending = true; requestAnimationFrame(() => { pending = false; if (st.chat === c) renderMsgs(); }); };
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const block = buf.slice(0, i); buf = buf.slice(i + 2);
+        const line = block.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        const ev = JSON.parse(line.slice(6));
+        const m = msg();
+        if (ev.k === "text") { const last = m.parts[m.parts.length - 1]; if (last?.t === "text") last.v += ev.v; else m.parts.push({ t: "text", v: ev.v }); }
+        else if (ev.k === "tool") m.parts.push({ t: "tool", name: ev.name, desc: ev.desc });
+        else if (ev.k === "error") m.error = ev.v;
+        redraw();
+      }
+    }
+  } catch (e) { if (st.chat === c) toast(e.message); }
+  if (st.chat !== c) return;
+  // Reload the saved version: it is complete even if the stream was interrupted.
+  try { st.chat = await get("/api/chats/" + c.id); } catch {}
+  if (st.chat.running) return setTimeout(() => st.chat?.id === c.id && attachStream(call("/api/chats/" + c.id + "/stream")), 1500);
+  renderMsgs(); renderOpts();
+  tg?.HapticFeedback?.notificationOccurred?.("success");
+}
+
+// ---------- start ----------
+(async () => {
+  if (!API) { document.body.innerHTML = `<div class="empty" style="padding:40px 20px">Откройте панель кнопкой «Панель» в чате с ботом.</div>`; return; }
+  if (!tg?.initData) { document.body.innerHTML = `<div class="empty" style="padding:40px 20px">Эта панель работает только внутри Telegram. Откройте её кнопкой «Панель» в боте.</div>`; return; }
+  try { st.me = await get("/api/me"); }
+  catch (e) { document.body.innerHTML = `<div class="empty" style="padding:40px 20px">Не удаётся подключиться к серверу.<br><br>${esc(e.message)}<br><br>Если сервер перезагружался, закройте панель и откройте её заново кнопкой в боте.</div>`; return; }
+  openHome();
+})();
+</script>
+</body>
+</html>
