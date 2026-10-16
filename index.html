@@ -95,15 +95,19 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacin
 .sheet input { width: 100%; padding: 12px 14px; border-radius: 12px; border: 0; background: var(--bg); outline: 0; margin-bottom: 10px; }
 .viewer pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; background: var(--bg); padding: 12px; border-radius: 12px; }
 .viewer img { max-width: 100%; border-radius: 12px; }
+#topbar { display: flex; align-items: center; padding: 8px 10px 0; }
+#topbar button { color: var(--link); padding: 6px 8px; font-size: 16px; }
+:root:not([data-tg]) #app { max-width: 860px; margin: 0 auto; width: 100%; }
 #toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: rgba(20,20,22,.9); color: #fff; padding: 9px 16px; border-radius: 12px; font-size: 14px; z-index: 20; max-width: 90%; }
 </style>
 </head>
 <body>
 <div id="app">
+  <div id="topbar" class="hidden"><button id="back-btn">‹ Назад</button></div>
   <!-- projects -->
   <div id="s-home" class="screen">
     <h1>Claude</h1>
-    <div class="toolbar"><button class="btn" id="new-project">+ Новый проект</button></div>
+    <div class="toolbar"><button class="btn" id="new-project">+ Новый проект</button><button class="btn ghost" id="browser-btn">🌐 Открыть в браузере</button><button class="btn ghost hidden" id="logout-btn">Выйти</button></div>
     <h2>Проекты</h2>
     <div class="card" id="projects"></div>
   </div>
@@ -140,9 +144,12 @@ h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacin
 
 <script>
 const tg = window.Telegram?.WebApp;
-if (tg?.initData) { document.documentElement.dataset.tg = "1"; tg.ready(); tg.expand(); }
+const inTg = !!tg?.initData;
+if (inTg) { document.documentElement.dataset.tg = "1"; tg.ready(); tg.expand(); }
 const params = new URLSearchParams(location.search);
 const API = (params.get("api") || (location.protocol === "https:" && !location.hostname.endsWith("github.io") ? location.origin : "")).replace(/\/+$/, "");
+// Browser mode: a session obtained from a one-time link sent by the bot.
+let session = inTg ? "" : localStorageGet("session") || "";
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -152,7 +159,8 @@ const when = (ts) => { const d = new Date(ts), n = new Date(); return d.toDateSt
 const size = (b) => b < 1024 ? b + " Б" : b < 1048576 ? (b / 1024).toFixed(0) + " КБ" : (b / 1048576).toFixed(1) + " МБ";
 
 async function call(path, opts = {}) {
-  const r = await fetch(API + path, { ...opts, headers: { "X-Init-Data": tg?.initData || "", ...(opts.json ? { "Content-Type": "application/json" } : {}), ...(opts.headers || {}) }, body: opts.json ? JSON.stringify(opts.json) : opts.body });
+  const r = await fetch(API + path, { ...opts, headers: { ...(inTg ? { "X-Init-Data": tg.initData } : { "X-Session": session }), ...(opts.json ? { "Content-Type": "application/json" } : {}), ...(opts.headers || {}) }, body: opts.json ? JSON.stringify(opts.json) : opts.body });
+  if (r.status === 401 && !inTg) { logoutLocal(); throw new Error("Сессия закончилась"); }
   if (!r.ok) { let e = "Ошибка " + r.status; try { e = (await r.json()).error || e; } catch {} throw new Error(e); }
   return r;
 }
@@ -163,7 +171,8 @@ const st = { me: null, project: null, tab: "chats", path: "", chat: null, attach
 const screens = ["#s-home", "#s-project", "#chat"];
 function show(id) {
   screens.forEach((s) => $(s).classList.toggle("hidden", s !== id));
-  if (tg?.BackButton) id === "#s-home" ? tg.BackButton.hide() : tg.BackButton.show();
+  if (inTg) id === "#s-home" ? tg.BackButton.hide() : tg.BackButton.show();
+  else $("#topbar").classList.toggle("hidden", id === "#s-home");
 }
 function back() {
   if (!$("#chat").classList.contains("hidden")) { closeChat(); openProject(st.project); }
@@ -172,7 +181,8 @@ function back() {
     else openHome();
   }
 }
-tg?.BackButton?.onClick(back);
+if (inTg) tg.BackButton.onClick(back);
+$("#back-btn").onclick = back;
 
 function sheet(html, onMount) {
   const bg = document.createElement("div");
@@ -408,12 +418,41 @@ async function attachStream(respPromise) {
   tg?.HapticFeedback?.notificationOccurred?.("success");
 }
 
+// ---------- browser access ----------
+const NEED_LINK = "Чтобы открыть панель в браузере, откройте её кнопкой «Панель» в боте и нажмите «🌐 Открыть в браузере» — бот пришлёт одноразовую ссылку для входа.";
+const message = (html) => { document.body.innerHTML = `<div class="empty" style="padding:40px 20px;max-width:560px;margin:0 auto">${html}</div>`; };
+function logoutLocal() { session = ""; try { localStorage.removeItem("session"); } catch {} message(NEED_LINK); }
+$("#browser-btn").classList.toggle("hidden", !inTg);
+$("#logout-btn").classList.toggle("hidden", inTg);
+$("#browser-btn").onclick = async () => {
+  try { await call("/api/browser-link", { method: "POST" }); toast("Ссылка отправлена в чат с ботом"); }
+  catch (e) { toast(e.message); }
+};
+$("#logout-btn").onclick = async () => {
+  if (!(await confirmBox("Выйти из панели в этом браузере?"))) return;
+  await call("/api/logout", { method: "POST" }).catch(() => {});
+  logoutLocal();
+};
+
 // ---------- start ----------
 (async () => {
-  if (!API) { document.body.innerHTML = `<div class="empty" style="padding:40px 20px">Откройте панель кнопкой «Панель» в чате с ботом.</div>`; return; }
-  if (!tg?.initData) { document.body.innerHTML = `<div class="empty" style="padding:40px 20px">Эта панель работает только внутри Telegram. Откройте её кнопкой «Панель» в боте.</div>`; return; }
+  const login = new URLSearchParams(location.hash.slice(1)).get("login");
+  if (login) history.replaceState(null, "", location.pathname + location.search);
+  if (!API) return message(inTg ? "Откройте панель кнопкой «Панель» в чате с ботом." : NEED_LINK);
+  if (!inTg && login) {
+    try {
+      const r = await fetch(API + "/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: login }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Ошибка " + r.status);
+      session = j.session; localStorageSet("session", session);
+    } catch (e) { if (!session) return message(esc(e.message)); }
+  }
+  if (!inTg && !session) return message(NEED_LINK);
   try { st.me = await get("/api/me"); }
-  catch (e) { document.body.innerHTML = `<div class="empty" style="padding:40px 20px">Не удаётся подключиться к серверу.<br><br>${esc(e.message)}<br><br>Если сервер перезагружался, закройте панель и откройте её заново кнопкой в боте.</div>`; return; }
+  catch (e) {
+    if (!inTg && !session) return;
+    return message(`Не удаётся подключиться к серверу.<br><br>${esc(e.message)}<br><br>` + (inTg ? "Если сервер перезагружался, закройте панель и откройте её заново кнопкой в боте." : "Если сервер перезагружался, его адрес мог измениться: получите новую ссылку кнопкой «🌐 Открыть в браузере» в панели в Telegram."));
+  }
   openHome();
 })();
 </script>
